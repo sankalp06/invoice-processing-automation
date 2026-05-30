@@ -1,0 +1,19 @@
+# Azure SDKs
+azure-storage-blob>=12.20.0
+azure-ai-documentintelligence>=1.0.0
+azure-ai-translation-document>=1.1.0
+azure-core>=1.30.0
+
+# LLM client
+openai>=1.30.0
+
+# HTTP
+requests>=2.32.0
+
+# Config
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+
+# Testing
+pytest>=8.0.0
+pytest-mock>=3.14.0
