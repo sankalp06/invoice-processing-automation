@@ -15,7 +15,7 @@ from azure.ai.translation.document import DocumentTranslationClient
 from azure.core.credentials import AzureKeyCredential
 
 from config.settings import settings
-from src.utils.retry import retry
+from shared.utils.retry import retry
 
 logger = logging.getLogger(__name__)
 

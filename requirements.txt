@@ -4,7 +4,7 @@ azure-ai-documentintelligence>=1.0.0
 azure-ai-translation-document>=1.1.0
 azure-core>=1.30.0
 
-# LLM client
+# LLM
 openai>=1.30.0
 
 # HTTP

@@ -14,7 +14,7 @@ from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
 
 from config.settings import settings
-from src.utils.retry import retry
+from shared.utils.retry import retry
 
 logger = logging.getLogger(__name__)
 

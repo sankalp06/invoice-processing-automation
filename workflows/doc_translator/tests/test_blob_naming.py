@@ -5,7 +5,7 @@ Unit tests for naming convention helpers — no Azure calls needed.
 """
 
 import pytest
-from src.utils.blob_naming import extract_source_lang, json_blob_name, translated_blob_name
+from shared.utils.blob_naming import extract_source_lang, json_blob_name, translated_blob_name
 
 
 @pytest.mark.parametrize(

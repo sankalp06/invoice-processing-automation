@@ -12,10 +12,10 @@ import logging
 from openai import OpenAI
 
 from config.settings import settings
-from src.clients.llm_client import create_llm_client
-from src.schemas.invoice_prompts import BASELINE_SYSTEM_PROMPT, DETAILS_SYSTEM_PROMPT
-from src.schemas.invoice_schemas import BASELINE_SCHEMA, DETAILS_SCHEMA
-from src.utils.retry import retry
+from shared.clients.llm_client import create_llm_client
+from shared.schemas.invoice_prompts import BASELINE_SYSTEM_PROMPT, DETAILS_SYSTEM_PROMPT
+from shared.schemas.invoice_schemas import BASELINE_SCHEMA, DETAILS_SCHEMA
+from shared.utils.retry import retry
 
 logger = logging.getLogger(__name__)
 

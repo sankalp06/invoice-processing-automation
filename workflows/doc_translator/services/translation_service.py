@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from config.settings import settings
-from src.clients.translator_client import AzureTranslatorClient
+from shared.clients.translator_client import AzureTranslatorClient
 
 logger = logging.getLogger(__name__)
 

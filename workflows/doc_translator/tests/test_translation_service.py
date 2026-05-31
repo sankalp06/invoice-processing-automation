@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from src.services.translation_service import TranslationService
+from workflows.doc_translator.services.translation_service import TranslationService
 
 
 def make_service(chunk_size: int = 20) -> tuple[TranslationService, MagicMock]:
