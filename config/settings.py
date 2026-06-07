@@ -1,70 +1,166 @@
 """
 config/settings.py
 ──────────────────
-Single source of truth for all configuration across every workflow.
+Single source of truth for all environment variables.
+
+Loads values from .env automatically while keeping the
+same lazy-read behavior as the original implementation.
+
+Usage:
+    from config.settings import settings
+
+    print(settings.storage_account_name)
+    print(settings.doc_intelligence_endpoint)
 """
+
 from __future__ import annotations
+
 import os
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+
+# Load .env file into os.environ
+load_dotenv()
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env" if os.path.exists(".env") else None,
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
+class _Settings:
+    """Lazy-read env vars — always reflects the current os.environ state."""
+
+    def _get(self, key: str, default: str = "") -> str:
+        return os.environ.get(key, default)
 
     # ── Azure Storage ──────────────────────────────────────────────────────
-    storage_account_name: str = Field(..., alias="STORAGE_ACCOUNT_NAME")
-    storage_account_key: str = Field(..., alias="STORAGE_ACCOUNT_KEY")
-    source_container: str = Field(..., alias="SOURCE_CONTAINER")
-    target_container: str = Field(..., alias="TARGET_CONTAINER")
-    raw_invoice_container: str = Field(..., alias="RAW_INVOICE_CONTAINER")
-    invalid_invoice_container: str = Field(..., alias="INVALID_INVOICE_CONTAINER")
+
+    @property
+    def storage_account_name(self) -> str:
+        return self._get("STORAGE_ACCOUNT_NAME")
+
+    @property
+    def storage_account_key(self) -> str:
+        return self._get("STORAGE_ACCOUNT_KEY")
+
+    @property
+    def source_container(self) -> str:
+        return self._get("SOURCE_CONTAINER", "raw-invoices")
+
+    @property
+    def target_container(self) -> str:
+        return self._get("TARGET_CONTAINER", "translated-invoices")
+
+    @property
+    def ocr_target_container(self) -> str:
+        return self._get("TARGET_CONTAINER_OCR", "ocr-invoices")
+
+    @property
+    def ocr_failed_container(self) -> str:
+        return self._get("FAILED_CONTAINER_OCR", "ocr-failed")
+
+    @property
+    def raw_invoice_container(self) -> str:
+        return self._get("RAW_INVOICE_CONTAINER", "raw-invoices")
+
+    @property
+    def invalid_invoice_container(self) -> str:
+        return self._get("INVALID_INVOICE_CONTAINER", "invalid-invoices")
 
     # ── Azure Document Intelligence ────────────────────────────────────────
-    doc_intelligence_endpoint: str = Field(..., alias="DOC_INTELLIGENCE_ENDPOINT")
-    doc_intelligence_key: str = Field(..., alias="DOC_INTELLIGENCE_KEY")
+
+    @property
+    def doc_intelligence_endpoint(self) -> str:
+        return self._get("DOC_INTELLIGENCE_ENDPOINT")
+
+    @property
+    def doc_intelligence_key(self) -> str:
+        return self._get("DOC_INTELLIGENCE_KEY")
+
+    @property
+    def ocr_model(self) -> str:
+        return self._get("OCR_MODEL", "prebuilt-invoice")
 
     # ── Azure Translator ───────────────────────────────────────────────────
-    translator_endpoint: str = Field(..., alias="TRANSLATOR_ENDPOINT")
-    translator_key: str = Field(..., alias="TRANSLATOR_KEY")
-    translator_region: str = Field(..., alias="TRANSLATOR_REGION")
+
+    @property
+    def translator_endpoint(self) -> str:
+        return self._get(
+            "TRANSLATOR_ENDPOINT",
+            "https://api.cognitive.microsofttranslator.com/",
+        )
+
+    @property
+    def translator_key(self) -> str:
+        return self._get("TRANSLATOR_KEY")
+
+    @property
+    def translator_region(self) -> str:
+        return self._get("TRANSLATOR_REGION", "eastus")
 
     # ── LLM ───────────────────────────────────────────────────────────────
-    llm_endpoint: str = Field(..., alias="LLM_ENDPOINT")
-    llm_api_key: str = Field(..., alias="LLM_API_KEY")
-    llm_deployment_name: str = Field(..., alias="LLM_DEPLOYMENT_NAME")
 
-    # ── Microsoft Graph / Email Scanner ───────────────────────────────────
-    ms_graph_client_id: str = Field(..., alias="MS_GRAPH_CLIENT_ID")
-    ms_graph_client_secret: str = Field(..., alias="MS_GRAPH_CLIENT_SECRET")
-    ms_graph_tenant_id: str = Field(..., alias="MS_GRAPH_TENANT_ID")
-    mailbox: str = Field(..., alias="MAILBOX")
+    @property
+    def llm_endpoint(self) -> str:
+        return self._get("LLM_ENDPOINT")
 
-    # ── Pipeline Tuning ────────────────────────────────────────────────────
-    pipeline_concurrency: int = Field(5, alias="PIPELINE_CONCURRENCY")
-    sas_expiry_hours: int = Field(24, alias="SAS_EXPIRY_HOURS")
-    translation_chunk_size: int = Field(9000, alias="TRANSLATION_CHUNK_SIZE")
-    ocr_model: str = Field("prebuilt-invoice", alias="OCR_MODEL")
-    email_lookback_hours: int = Field(24, alias="EMAIL_LOOKBACK_HOURS")
+    @property
+    def llm_api_key(self) -> str:
+        return self._get("LLM_API_KEY")
 
-    @field_validator("pipeline_concurrency")
-    @classmethod
-    def concurrency_positive(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("PIPELINE_CONCURRENCY must be >= 1")
-        return v
+    @property
+    def llm_deployment_name(self) -> str:
+        return self._get("LLM_DEPLOYMENT_NAME")
 
-    @field_validator("translation_chunk_size")
-    @classmethod
-    def chunk_within_api_limit(cls, v: int) -> int:
-        if not (1 <= v <= 10_000):
-            raise ValueError("TRANSLATION_CHUNK_SIZE must be between 1 and 10 000")
-        return v
+    # ── Microsoft Graph ────────────────────────────────────────────────────
+
+    @property
+    def ms_graph_client_id(self) -> str:
+        return self._get("MS_GRAPH_CLIENT_ID")
+
+    @property
+    def ms_graph_client_secret(self) -> str:
+        return self._get("MS_GRAPH_CLIENT_SECRET")
+
+    @property
+    def ms_graph_tenant_id(self) -> str:
+        return self._get("MS_GRAPH_TENANT_ID")
+
+    @property
+    def mailbox(self) -> str:
+        return self._get("MAILBOX")
+
+    # ── Azure SQL ──────────────────────────────────────────────────────────
+
+    @property
+    def sql_connection_string(self) -> str:
+        raw = self._get("SQL_CONNECTION_STRING")
+
+        if not raw:
+            return ""
+
+        if not raw.strip().startswith("Driver="):
+            raw = "Driver={ODBC Driver 18 for SQL Server};" + raw
+
+        return raw
+
+    # ── Pipeline tuning ────────────────────────────────────────────────────
+
+    @property
+    def pipeline_concurrency(self) -> int:
+        return int(self._get("PIPELINE_CONCURRENCY", "5"))
+
+    @property
+    def sas_expiry_hours(self) -> int:
+        return int(self._get("SAS_EXPIRY_HOURS", "24"))
+
+    @property
+    def translation_chunk_size(self) -> int:
+        return int(self._get("TRANSLATION_CHUNK_SIZE", "9000"))
+
+    @property
+    def email_lookback_hours(self) -> float:
+        return float(self._get("EMAIL_LOOKBACK_HOURS", "1"))
+
+    @property
+    def timer_lookback_hours(self) -> float:
+        return float(self._get("TIMER_LOOKBACK_HOURS", "0.5"))
 
 
-settings = Settings()  # type: ignore[call-arg]
+# Module-level singleton
+settings = _Settings()

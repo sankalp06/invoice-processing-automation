@@ -16,6 +16,7 @@ from azure.storage.blob import (
     BlobSasPermissions,
     BlobServiceClient,
     ContainerSasPermissions,
+    ContentSettings,
     generate_blob_sas,
     generate_container_sas,
 )
@@ -35,12 +36,53 @@ class AzureBlobStorageClient:
             f"AccountKey={settings.storage_account_key};"
             f"EndpointSuffix=core.windows.net"
         )
-        self._service_client = BlobServiceClient.from_connection_string(connection_string)
+
+        self._service_client = BlobServiceClient.from_connection_string(
+            connection_string
+        )
         self._account_name = settings.storage_account_name
         self._account_key = settings.storage_account_key
         self._sas_expiry_hours = settings.sas_expiry_hours
 
-    # ── SAS generation ─────────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Backward compatibility methods
+    # ------------------------------------------------------------------
+
+    def container(self, container_name: str):
+        """
+        Backward-compatible method expected by older workflows.
+        Returns Azure SDK ContainerClient.
+        """
+        return self._service_client.get_container_client(container_name)
+
+    def download_bytes(self, container: str, blob_name: str) -> bytes:
+        """
+        Backward-compatible alias.
+        """
+        return self.download_blob_bytes(container, blob_name)
+
+    def upload_file(
+        self,
+        container: str,
+        blob_name: str,
+        file_path: str,
+        overwrite: bool = True,
+    ) -> None:
+        """
+        Backward-compatible file uploader expected by older workflows.
+        """
+        with open(file_path, "rb") as f:
+            self.upload_blob(
+                container=container,
+                blob_name=blob_name,
+                data=f,
+                content_type="application/pdf",
+                overwrite=overwrite,
+            )
+
+    # ------------------------------------------------------------------
+    # SAS generation
+    # ------------------------------------------------------------------
 
     def get_blob_sas_url(
         self,
@@ -50,15 +92,20 @@ class AzureBlobStorageClient:
         write: bool = False,
         create: bool = False,
     ) -> str:
-        """Generate a time-limited SAS URL for a single blob."""
         token = generate_blob_sas(
             account_name=self._account_name,
             container_name=container,
             blob_name=blob_name,
             account_key=self._account_key,
-            permission=BlobSasPermissions(read=read, write=write, create=create),
-            expiry=datetime.now(UTC) + timedelta(hours=self._sas_expiry_hours),
+            permission=BlobSasPermissions(
+                read=read,
+                write=write,
+                create=create,
+            ),
+            expiry=datetime.now(UTC)
+            + timedelta(hours=self._sas_expiry_hours),
         )
+
         return (
             f"https://{self._account_name}.blob.core.windows.net/"
             f"{container}/{blob_name}?{token}"
@@ -72,7 +119,6 @@ class AzureBlobStorageClient:
         create: bool = False,
         list_blobs: bool = True,
     ) -> str:
-        """Generate a time-limited SAS URL for an entire container."""
         token = generate_container_sas(
             account_name=self._account_name,
             container_name=container,
@@ -83,60 +129,87 @@ class AzureBlobStorageClient:
                 create=create,
                 list=list_blobs,
             ),
-            expiry=datetime.now(UTC) + timedelta(hours=self._sas_expiry_hours),
-        )
-        return (
-            f"https://{self._account_name}.blob.core.windows.net/{container}?{token}"
+            expiry=datetime.now(UTC)
+            + timedelta(hours=self._sas_expiry_hours),
         )
 
-    # ── Listing ────────────────────────────────────────────────────────────
+        return (
+            f"https://{self._account_name}.blob.core.windows.net/"
+            f"{container}?{token}"
+        )
+
+    # ------------------------------------------------------------------
+    # Listing
+    # ------------------------------------------------------------------
 
     def list_blobs(self, container: str) -> Iterator[str]:
-        """Yield the name of every blob in *container*."""
         container_client = self._service_client.get_container_client(container)
+
         for blob in container_client.list_blobs():
             yield blob.name
 
-    # ── Download ───────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Download
+    # ------------------------------------------------------------------
 
-    def download_blob_bytes(self, container: str, blob_name: str) -> bytes:
-        """Download a blob and return its raw bytes."""
+    def download_blob_bytes(
+        self,
+        container: str,
+        blob_name: str,
+    ) -> bytes:
         logger.debug("Downloading blob %s/%s", container, blob_name)
+
         blob_client = self._service_client.get_blob_client(
-            container=container, blob=blob_name
+            container=container,
+            blob=blob_name,
         )
+
         return blob_client.download_blob().readall()
 
-    # ── Upload ─────────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Upload
+    # ------------------------------------------------------------------
 
     def upload_blob(
         self,
         container: str,
         blob_name: str,
-        data: bytes | str,
+        data,
         content_type: str = "application/octet-stream",
         overwrite: bool = True,
     ) -> None:
-        """Upload *data* to *container*/*blob_name*."""
-        logger.debug("Uploading to %s/%s (%s)", container, blob_name, content_type)
-        blob_client: BlobClient = self._service_client.get_blob_client(
-            container=container, blob=blob_name
+        logger.debug(
+            "Uploading to %s/%s (%s)",
+            container,
+            blob_name,
+            content_type,
         )
+
+        blob_client: BlobClient = self._service_client.get_blob_client(
+            container=container,
+            blob=blob_name,
+        )
+
         blob_client.upload_blob(
             data,
             overwrite=overwrite,
-            content_settings=self._content_settings(content_type),
+            content_settings=ContentSettings(
+                content_type=content_type
+            ),
         )
 
-    @staticmethod
-    def _content_settings(content_type: str):
-        from azure.storage.blob import ContentSettings
+    # ------------------------------------------------------------------
+    # Existence check
+    # ------------------------------------------------------------------
 
-        return ContentSettings(content_type=content_type)
-
-    def blob_exists(self, container: str, blob_name: str) -> bool:
-        """Return True if the blob already exists."""
+    def blob_exists(
+        self,
+        container: str,
+        blob_name: str,
+    ) -> bool:
         blob_client = self._service_client.get_blob_client(
-            container=container, blob=blob_name
+            container=container,
+            blob=blob_name,
         )
+
         return blob_client.exists()
