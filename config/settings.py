@@ -2,34 +2,22 @@
 config/settings.py
 ──────────────────
 Single source of truth for all environment variables.
+All properties are lowercase to match the existing workflow convention.
 
-Loads values from .env automatically while keeping the
-same lazy-read behavior as the original implementation.
-
-Usage:
     from config.settings import settings
-
     print(settings.storage_account_name)
-    print(settings.doc_intelligence_endpoint)
 """
-
 from __future__ import annotations
-
 import os
-from dotenv import load_dotenv
-
-# Load .env file into os.environ
-load_dotenv()
 
 
 class _Settings:
-    """Lazy-read env vars — always reflects the current os.environ state."""
+    """Lazy-read env vars — always reflects current os.environ state."""
 
     def _get(self, key: str, default: str = "") -> str:
         return os.environ.get(key, default)
 
     # ── Azure Storage ──────────────────────────────────────────────────────
-
     @property
     def storage_account_name(self) -> str:
         return self._get("STORAGE_ACCOUNT_NAME")
@@ -40,7 +28,7 @@ class _Settings:
 
     @property
     def source_container(self) -> str:
-        return self._get("SOURCE_CONTAINER", "raw-invoices")
+        return self._get("SOURCE_CONTAINER", "ocr-invoices")
 
     @property
     def target_container(self) -> str:
@@ -63,7 +51,6 @@ class _Settings:
         return self._get("INVALID_INVOICE_CONTAINER", "invalid-invoices")
 
     # ── Azure Document Intelligence ────────────────────────────────────────
-
     @property
     def doc_intelligence_endpoint(self) -> str:
         return self._get("DOC_INTELLIGENCE_ENDPOINT")
@@ -77,7 +64,6 @@ class _Settings:
         return self._get("OCR_MODEL", "prebuilt-invoice")
 
     # ── Azure Translator ───────────────────────────────────────────────────
-
     @property
     def translator_endpoint(self) -> str:
         return self._get(
@@ -94,7 +80,6 @@ class _Settings:
         return self._get("TRANSLATOR_REGION", "eastus")
 
     # ── LLM ───────────────────────────────────────────────────────────────
-
     @property
     def llm_endpoint(self) -> str:
         return self._get("LLM_ENDPOINT")
@@ -108,7 +93,6 @@ class _Settings:
         return self._get("LLM_DEPLOYMENT_NAME")
 
     # ── Microsoft Graph ────────────────────────────────────────────────────
-
     @property
     def ms_graph_client_id(self) -> str:
         return self._get("MS_GRAPH_CLIENT_ID")
@@ -126,21 +110,17 @@ class _Settings:
         return self._get("MAILBOX")
 
     # ── Azure SQL ──────────────────────────────────────────────────────────
-
     @property
     def sql_connection_string(self) -> str:
         raw = self._get("SQL_CONNECTION_STRING")
-
         if not raw:
             return ""
-
+        # Auto-fix missing Driver= prefix (common copy-paste mistake)
         if not raw.strip().startswith("Driver="):
             raw = "Driver={ODBC Driver 18 for SQL Server};" + raw
-
         return raw
 
     # ── Pipeline tuning ────────────────────────────────────────────────────
-
     @property
     def pipeline_concurrency(self) -> int:
         return int(self._get("PIPELINE_CONCURRENCY", "5"))

@@ -15,8 +15,12 @@ from __future__ import annotations
 import argparse
 import sys
 
+# Load .env before any other imports so settings picks up credentials
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 from config.settings import settings
-from shared.clients.blob_client import AzureBlobStorageClient
+from shared.clients.blob_client import BlobStorageClient
 from shared.clients.doc_intel_client import AzureDocumentIntelligenceClient
 from shared.clients.translator_client import AzureTranslatorClient
 from shared.utils.logging import setup_logging
@@ -45,7 +49,7 @@ def main() -> int:
                 settings.source_container, settings.target_container)
 
     if args.dry_run:
-        blob_client = AzureBlobStorageClient()
+        blob_client = BlobStorageClient()
         blobs = list(blob_client.list_blobs(settings.source_container))
         logger.info("Dry run — %d blob(s) in '%s':", len(blobs), settings.source_container)
         for b in blobs:
@@ -53,7 +57,7 @@ def main() -> int:
         return 0
 
     pipeline = PipelineService(
-        blob_client=AzureBlobStorageClient(),
+        blob_client=BlobStorageClient(),
         doc_intel_client=AzureDocumentIntelligenceClient(),
         translator_client=AzureTranslatorClient(),
         extraction_service=ExtractionService(),

@@ -14,6 +14,10 @@ from __future__ import annotations
 import argparse
 import sys
 
+# Load .env before any other imports so settings picks up credentials
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 from config.settings import settings
 from shared.clients.blob_client import AzureBlobStorageClient
 from shared.clients.doc_intel_client import AzureDocumentIntelligenceClient

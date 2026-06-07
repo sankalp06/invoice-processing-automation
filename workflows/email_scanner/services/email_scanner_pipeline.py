@@ -26,6 +26,7 @@ from workflows.email_scanner.services.attachment_processor import (
     AttachmentProcessor,
     AttachmentResult,
 )
+from loggers.log_db import Step, Workflow, log_step
 from workflows.email_scanner.services.email_composer import (
     AttachmentOutcome,
     compose_full_failure_email,
@@ -86,6 +87,7 @@ class EmailScannerPipeline:
         translator_client: AzureTranslatorClient,
     ) -> None:
         self._graph = graph_client
+        self._run_id = ""
         self._attachment_processor = AttachmentProcessor(
             blob_client=blob_client,
             doc_intel_client=doc_intel_client,
@@ -96,7 +98,7 @@ class EmailScannerPipeline:
 
     # ── Public API ──────────────────────────────────────────────────────────
 
-    def run(self, lookback_hours: int | None = None) -> ScanResult:
+    def run(self, lookback_hours: int | None = None, run_id: str = "email-scanner") -> ScanResult:
         """
         Scan the inbox and process all emails with attachments.
 
@@ -105,12 +107,23 @@ class EmailScannerPipeline:
         lookback_hours : How far back to scan (overrides settings default).
         """
         hours = lookback_hours or settings.email_lookback_hours
-        logger.info("Email scanner starting — lookback=%dh", hours)
+        self._run_id = run_id
+        self._attachment_processor._run_id = run_id
+        logger.info("Email scanner starting — lookback=%dh run_id=%s", hours, run_id)
 
         messages = self._graph.list_messages(lookback_hours=hours)
         scan = ScanResult(messages_scanned=len(messages))
 
         for msg in messages:
+            # ── Lineage: one row per email received ───────────────────────
+            log_step(
+                run_id=self._run_id,
+                workflow_name=Workflow.EMAIL_SCANNER,
+                step_name=Step.EMAIL_RECEIVED,
+                status="Received",
+                step_value=msg.get("subject", ""),
+                detail=msg.get("from", {}).get("emailAddress", {}).get("address", ""),
+            )
             result = self._process_message(msg)
             if result:
                 scan.message_results.append(result)
@@ -158,6 +171,14 @@ class EmailScannerPipeline:
                 att_id = att["id"]
                 filename = att.get("name", f"attachment_{att_id}")
                 raw_bytes = self._graph.download_attachment(message_id, att_id)
+                # ── Lineage: one row per attachment processed ─────────────
+                log_step(
+                    run_id=self._run_id,
+                    workflow_name=Workflow.EMAIL_SCANNER,
+                    step_name=Step.ATTACHMENT_PROCESSED,
+                    status="Processing",
+                    step_value=filename,
+                )
                 att_result = self._attachment_processor.process(filename, raw_bytes)
                 result.attachment_results.append(att_result)
 

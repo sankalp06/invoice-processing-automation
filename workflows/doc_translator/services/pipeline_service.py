@@ -18,6 +18,8 @@ per-blob orchestration. We use the Translator REST API for text chunks instead.
 from __future__ import annotations
 
 import json
+
+from loggers.log_db import Step, Workflow, log_step
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -68,6 +70,7 @@ class PipelineService:
         blob_name: str,
         source_lang: str | None = None,
         skip_if_exists: bool = True,
+        run_id: str = "doc-translator",
     ) -> DocumentResult:
         """
         Process a single blob end-to-end.
@@ -83,6 +86,10 @@ class PipelineService:
         6. LLM structured extraction on English text.
         7. Upload JSON to target as <stem>_en.json.
         """
+
+        if hasattr(blob_name, "name"):
+            blob_name = blob_name.name
+
         target_doc = translated_blob_name(blob_name)
         target_json = json_blob_name(blob_name)
 
@@ -129,7 +136,7 @@ class PipelineService:
             logger.info("Translated text: %d characters", len(translated_text))
 
             # ── Step 4: Upload original binary as <stem>_en.<ext> ──────────
-            self._blob.upload_blob(
+            self._blob.upload(
                 container=settings.target_container,
                 blob_name=target_doc,
                 data=source_bytes,
@@ -157,13 +164,31 @@ class PipelineService:
             json_bytes = json.dumps(
                 extracted_data, ensure_ascii=False, indent=2
             ).encode("utf-8")
-            self._blob.upload_blob(
+            self._blob.upload(
                 container=settings.target_container,
                 blob_name=target_json,
                 data=json_bytes,
                 content_type="application/json",
             )
             logger.info("JSON uploaded → %s  (%d bytes)", target_json, len(json_bytes))
+
+            # ── Lineage: translation + extraction completed ────────────────
+            log_step(
+                run_id=run_id,
+                workflow_name=Workflow.DOC_TRANSLATOR,
+                step_name=Step.TRANSLATION_COMPLETED,
+                status="Completed",
+                step_value=blob_name,
+                detail=f"translated={target_doc}",
+            )
+            log_step(
+                run_id=run_id,
+                workflow_name=Workflow.DOC_TRANSLATOR,
+                step_name=Step.EXTRACTION_COMPLETED,
+                status="Completed",
+                step_value=blob_name,
+                detail=f"json={target_json} fields={len(extracted_data)}",
+            )
 
             return DocumentResult(
                 blob_name=blob_name,
@@ -175,6 +200,15 @@ class PipelineService:
 
         except Exception as exc:
             logger.exception("Failed to process blob %s: %s", blob_name, exc)
+            # ── Lineage: translation failed ───────────────────────────────
+            log_step(
+                run_id=run_id,
+                workflow_name=Workflow.DOC_TRANSLATOR,
+                step_name=Step.TRANSLATION_FAILED,
+                status="Failed",
+                step_value=blob_name,
+                detail=str(exc),
+            )
             return DocumentResult(
                 blob_name=blob_name,
                 success=False,
@@ -186,6 +220,7 @@ class PipelineService:
         source_lang: str | None = None,
         concurrency: int | None = None,
         skip_if_exists: bool = True,
+        run_id: str = "doc-translator",
     ) -> list[DocumentResult]:
         """
         List all blobs in the source container and process them concurrently.
@@ -211,7 +246,7 @@ class PipelineService:
         with ThreadPoolExecutor(max_workers=workers) as executor:
             future_to_blob = {
                 executor.submit(
-                    self.process_blob, blob, source_lang, skip_if_exists
+                    self.process_blob, blob, source_lang, skip_if_exists, run_id
                 ): blob
                 for blob in blobs
             }

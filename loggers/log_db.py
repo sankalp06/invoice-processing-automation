@@ -97,7 +97,7 @@ def log_step(
     """
     if not settings.sql_connection_string:
         logger.debug(
-            "sql_connection_string not set — skipping lineage log: %s / %s",
+            "SQL_CONNECTION_STRING not set — skipping lineage log: %s / %s",
             workflow_name, step_name,
         )
         return

@@ -23,6 +23,7 @@ from shared.clients.translator_client import AzureTranslatorClient
 from workflows.email_scanner.services.invoice_classifier import InvoiceClassifier
 from workflows.email_scanner.services.language_detector import LanguageDetector
 from workflows.doc_translator.services.translation_service import TranslationService
+from loggers.log_db import Step, Workflow, log_step
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +66,14 @@ class AttachmentProcessor:
         translator_client: AzureTranslatorClient,
         classifier: InvoiceClassifier,
         language_detector: LanguageDetector,
+        run_id: str = "email-scanner",
     ) -> None:
         self._blob = blob_client
         self._doc_intel = doc_intel_client
         self._translation = TranslationService(translator_client)
         self._classifier = classifier
         self._lang_detector = language_detector
+        self._run_id = run_id
 
     def process(self, filename: str, raw_bytes: bytes) -> AttachmentResult:
         """
@@ -130,7 +133,7 @@ class AttachmentProcessor:
                 target_name = filename
                 container = settings.invalid_invoice_container
 
-            self._blob.upload_blob(
+            self._blob.upload(
                 container=container,
                 blob_name=target_name,
                 data=raw_bytes,
@@ -139,6 +142,16 @@ class AttachmentProcessor:
             logger.info(
                 "%s → %s/%s (valid=%s)",
                 filename, container, target_name, is_invoice,
+            )
+
+            # ── Lineage: per-attachment outcome ───────────────────────────
+            log_step(
+                run_id=self._run_id,
+                workflow_name=Workflow.EMAIL_SCANNER,
+                step_name=Step.ATTACHMENT_VALIDATION_PASSED if is_invoice else Step.ATTACHMENT_VALIDATION_FAILED,
+                status="Completed" if is_invoice else "Rejected",
+                step_value=filename,
+                detail=reason,
             )
 
             return AttachmentResult(
@@ -155,7 +168,7 @@ class AttachmentProcessor:
             logger.exception("Failed to process attachment %s: %s", filename, exc)
             # Best-effort: try to store in invalid container for audit
             try:
-                self._blob.upload_blob(
+                self._blob.upload(
                     container=settings.invalid_invoice_container,
                     blob_name=filename,
                     data=raw_bytes,
@@ -163,6 +176,16 @@ class AttachmentProcessor:
                 )
             except Exception:
                 pass
+
+            # ── Lineage: processing error ─────────────────────────────
+            log_step(
+                run_id=self._run_id,
+                workflow_name=Workflow.EMAIL_SCANNER,
+                step_name=Step.ATTACHMENT_VALIDATION_FAILED,
+                status="Error",
+                step_value=filename,
+                detail=str(exc),
+            )
 
             return AttachmentResult(
                 filename=filename,

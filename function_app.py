@@ -48,7 +48,7 @@ load_dotenv(override=True)
 from workflows.ocr_pipeline import process_files as run_ocr
 
 # ── Workflow 2: Email Scanner ──────────────────────────────────────────────────
-from shared.clients.blob_client import AzureBlobStorageClient
+from shared.clients.blob_client import BlobStorageClient
 from shared.clients.doc_intel_client import AzureDocumentIntelligenceClient
 from shared.clients.graph_client import MSGraphClient
 from shared.clients.translator_client import AzureTranslatorClient
@@ -109,7 +109,7 @@ def _json_ok(data: dict) -> func.HttpResponse:
 def _build_email_scanner() -> EmailScannerPipeline:
     return EmailScannerPipeline(
         graph_client=MSGraphClient(),
-        blob_client=AzureBlobStorageClient(),
+        blob_client=BlobStorageClient(),
         doc_intel_client=AzureDocumentIntelligenceClient(),
         translator_client=AzureTranslatorClient(),
     )
@@ -117,7 +117,7 @@ def _build_email_scanner() -> EmailScannerPipeline:
 
 def _build_doc_translator() -> PipelineService:
     return PipelineService(
-        blob_client=AzureBlobStorageClient(),
+        blob_client=BlobStorageClient(),
         doc_intel_client=AzureDocumentIntelligenceClient(),
         translator_client=AzureTranslatorClient(),
         extraction_service=ExtractionService(llm_client=create_llm_client()),
@@ -131,7 +131,7 @@ def _build_doc_translator() -> PipelineService:
 @app.route(route="ocr_trigger", methods=["GET", "POST"])
 def ocr_trigger(req: func.HttpRequest) -> func.HttpResponse:
     rid = _run_id("ocr-http")
-    lookback = _parse_lookback(req, default=6.0)
+    lookback = _parse_lookback(req, default=0.5)
     logger.info("ocr_trigger | run_id=%s lookback=%sh", rid, lookback)
 
     try:
@@ -173,7 +173,7 @@ def email_processing_trigger(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("email_processing_trigger | run_id=%s lookback=%sh", rid, lookback)
 
     try:
-        result = _build_email_scanner().run(lookback_hours=lookback)
+        result = _build_email_scanner().run(lookback_hours=lookback, run_id=rid)
         log_step(
             rid, Workflow.EMAIL_SCANNER, Step.WORKFLOW_COMPLETED, "Completed",
             detail=(
@@ -210,7 +210,7 @@ def email_timer(emailTimer: func.TimerRequest) -> None:
     lookback = settings.timer_lookback_hours
     logger.info("Email timer triggered | run_id=%s lookback=%sh", rid, lookback)
     try:
-        result = _build_email_scanner().run(lookback_hours=lookback)
+        result = _build_email_scanner().run(lookback_hours=lookback, run_id=rid)
         log_step(
             rid, Workflow.EMAIL_SCANNER, Step.WORKFLOW_COMPLETED, "Completed",
             detail=(
@@ -235,7 +235,7 @@ def translation_trigger(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("translation_trigger | run_id=%s source_lang=%s", rid, source_lang or "auto")
 
     try:
-        results = _build_doc_translator().run_batch(source_lang=source_lang)
+        results = _build_doc_translator().run_batch(source_lang=source_lang, run_id=rid)
         succeeded = sum(1 for r in results if r.success)
         failed    = len(results) - succeeded
         log_step(
@@ -266,7 +266,7 @@ def translation_timer(translationTimer: func.TimerRequest) -> None:
         logger.warning("Translation timer past due | run_id=%s", rid)
     logger.info("Translation timer triggered | run_id=%s", rid)
     try:
-        results = _build_doc_translator().run_batch()
+        results = _build_doc_translator().run_batch(run_id=rid)
         succeeded = sum(1 for r in results if r.success)
         failed    = len(results) - succeeded
         log_step(
