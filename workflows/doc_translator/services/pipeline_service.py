@@ -118,7 +118,7 @@ class PipelineService:
 
             # ── Step 2: Download + OCR (single download, bytes reused) ─────
             source_bytes, extracted_text = self._ocr.extract_text(
-                settings.source_container, blob_name
+                settings.source_container_translation, blob_name
             )
             if not source_bytes:
                 raise ValueError("Downloaded blob is empty")
@@ -173,6 +173,15 @@ class PipelineService:
             logger.info("JSON uploaded → %s  (%d bytes)", target_json, len(json_bytes))
 
             # ── Lineage: translation + extraction completed ────────────────
+            # Generate SAS download URLs for all three output blobs so the
+            # lineage API can surface them as clickable/downloadable links.
+            try:
+                original_link    = self._blob.get_blob_sas_url(settings.source_container_translation, blob_name)
+                translated_link  = self._blob.get_blob_sas_url(settings.target_container, target_doc)
+                json_link        = self._blob.get_blob_sas_url(settings.target_container, target_json)
+            except Exception:
+                original_link = translated_link = json_link = None
+
             log_step(
                 run_id=run_id,
                 workflow_name=Workflow.DOC_TRANSLATOR,
@@ -180,6 +189,9 @@ class PipelineService:
                 status="Completed",
                 step_value=blob_name,
                 detail=f"translated={target_doc}",
+                filename=PurePosixPath(blob_name).name,
+                original_file_link=original_link,
+                translated_file_link=translated_link,
             )
             log_step(
                 run_id=run_id,
@@ -188,6 +200,10 @@ class PipelineService:
                 status="Completed",
                 step_value=blob_name,
                 detail=f"json={target_json} fields={len(extracted_data)}",
+                filename=PurePosixPath(blob_name).name,
+                original_file_link=original_link,
+                translated_file_link=translated_link,
+                extracted_json_link=json_link,
             )
 
             return DocumentResult(
@@ -226,11 +242,11 @@ class PipelineService:
         List all blobs in the source container and process them concurrently.
         """
         workers = concurrency or settings.pipeline_concurrency
-        blobs = list(self._blob.list_blobs(settings.source_container))
+        blobs = list(self._blob.list_blobs(settings.source_container_translation))
 
         if not blobs:
             logger.warning(
-                "No blobs found in source container '%s'", settings.source_container
+                "No blobs found in source container '%s'", settings.source_container_translation
             )
             return []
 

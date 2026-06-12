@@ -80,20 +80,28 @@ def log_step(
     item_count: int = 1,
     detail: str | None = None,
     logged_at: datetime | None = None,
+    filename: str | None = None,
+    original_file_link: str | None = None,
+    translated_file_link: str | None = None,
+    extracted_json_link: str | None = None,
 ) -> None:
     """
     Insert one row into invoice_process_log.
 
     Parameters
     ----------
-    run_id        : Unique identifier for the workflow run.
-    workflow_name : Use Workflow.* constants.
-    step_name     : Use Step.* constants.
-    status        : Free text — "Completed", "Failed", "InProgress", etc.
-    step_value    : Optional blob name, filename, or other item identifier.
-    item_count    : Number of items this row represents (default 1).
-    detail        : Optional extra context / error message.
-    logged_at     : Override timestamp (defaults to UTC now).
+    run_id               : Unique identifier for the workflow run.
+    workflow_name        : Use Workflow.* constants.
+    step_name            : Use Step.* constants.
+    status               : Free text — "Completed", "Failed", "InProgress", etc.
+    step_value           : Optional blob name, filename, or other item identifier.
+    item_count           : Number of items this row represents (default 1).
+    detail               : Optional extra context / error message.
+    logged_at            : Override timestamp (defaults to UTC now).
+    filename             : Original attachment filename (attachment-level steps only).
+    original_file_link   : SAS download URL for the original uploaded blob.
+    translated_file_link : SAS download URL for the translated (_en) blob.
+    extracted_json_link  : SAS download URL for the extracted JSON blob.
     """
     if not settings.sql_connection_string:
         logger.debug(
@@ -105,12 +113,18 @@ def log_step(
     ts = logged_at or datetime.now(timezone.utc)
     sql = """
         INSERT INTO invoice_process_log
-            (run_id, workflow_name, step_name, step_value, item_count, status, logged_at, detail)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (run_id, workflow_name, step_name, step_value, item_count, status,
+             logged_at, detail, filename, original_file_link,
+             translated_file_link, extracted_json_link)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     try:
         with _get_conn() as conn:
-            conn.execute(sql, (run_id, workflow_name, step_name, step_value, item_count, status, ts, detail))
+            conn.execute(sql, (
+                run_id, workflow_name, step_name, step_value, item_count, status,
+                ts, detail, filename, original_file_link,
+                translated_file_link, extracted_json_link,
+            ))
         logger.debug("Logged step: %s / %s / %s", run_id, step_name, status)
     except Exception as exc:
         # Never let a lineage write crash the main workflow
@@ -185,6 +199,55 @@ def get_lineage_summary(period: str = "today") -> dict:
         "workflow_completed":           counts.get(Step.WORKFLOW_COMPLETED, 0),
         "workflow_failed":              counts.get(Step.WORKFLOW_FAILED, 0),
     }
+
+
+def get_attachment_lineage(period: str = "today") -> list[dict]:
+    """
+    Return one record per attachment that has file-link data for the given period.
+
+    Each record contains:
+        run_id, workflow_name, step_name, status, filename,
+        original_file_link, translated_file_link, extracted_json_link, logged_at
+
+    Only rows where at least one file link is populated are returned, giving
+    a clean per-attachment view with downloadable SAS URLs.
+    """
+    where = _date_filter(period)
+
+    sql = f"""
+        SELECT
+            run_id,
+            workflow_name,
+            step_name,
+            status,
+            filename,
+            original_file_link,
+            translated_file_link,
+            extracted_json_link,
+            logged_at
+        FROM invoice_process_log
+        WHERE {where}
+          AND (
+              filename              IS NOT NULL OR
+              original_file_link    IS NOT NULL OR
+              translated_file_link  IS NOT NULL OR
+              extracted_json_link   IS NOT NULL
+          )
+        ORDER BY logged_at DESC
+    """
+
+    rows: list[dict] = []
+    try:
+        with _get_conn() as conn:
+            cursor = conn.execute(sql)
+            columns = [col[0] for col in cursor.description]
+            for row in cursor.fetchall():
+                rows.append(dict(zip(columns, row)))
+    except Exception as exc:
+        logger.error("Failed to read attachment lineage: %s", exc)
+        raise
+
+    return rows
 
 
 # ─────────────────────────────────────────────────────────────────────────────

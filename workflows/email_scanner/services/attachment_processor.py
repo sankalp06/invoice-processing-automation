@@ -145,6 +145,13 @@ class AttachmentProcessor:
             )
 
             # ── Lineage: per-attachment outcome ───────────────────────────
+            # Generate a SAS download URL for the uploaded blob so the lineage
+            # API can return it as a clickable/downloadable link.
+            try:
+                original_link = self._blob.get_blob_sas_url(container, target_name)
+            except Exception:
+                original_link = None
+
             log_step(
                 run_id=self._run_id,
                 workflow_name=Workflow.EMAIL_SCANNER,
@@ -152,6 +159,8 @@ class AttachmentProcessor:
                 status="Completed" if is_invoice else "Rejected",
                 step_value=filename,
                 detail=reason,
+                filename=filename,
+                original_file_link=original_link,
             )
 
             return AttachmentResult(
@@ -185,6 +194,7 @@ class AttachmentProcessor:
                 status="Error",
                 step_value=filename,
                 detail=str(exc),
+                filename=filename,
             )
 
             return AttachmentResult(

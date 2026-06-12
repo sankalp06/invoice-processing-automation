@@ -60,7 +60,7 @@ from workflows.doc_translator.services.extraction_service import ExtractionServi
 from workflows.doc_translator.services.pipeline_service import PipelineService
 
 # ── Workflow 4: Lineage REST API ───────────────────────────────────────────────
-from workflows.lineage_summary import get_lineage_summary_response
+from workflows.lineage_summary import get_lineage_summary_response, get_attachment_lineage_response
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ def _build_doc_translator() -> PipelineService:
 @app.route(route="ocr_trigger", methods=["GET", "POST"])
 def ocr_trigger(req: func.HttpRequest) -> func.HttpResponse:
     rid = _run_id("ocr-http")
-    lookback = _parse_lookback(req, default=0.5)
+    lookback = _parse_lookback(req, default=6.0)
     logger.info("ocr_trigger | run_id=%s lookback=%sh", rid, lookback)
 
     try:
@@ -304,3 +304,30 @@ def lineage_summary(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as exc:
         logger.error("lineage_summary error | %s", exc, exc_info=True)
         return _err(f"Error fetching lineage summary: {exc}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Workflow 4b — Attachment Lineage REST API (read-only, no timer)
+# GET /api/attachment_lineage?period=today|yesterday|last_7_days|last_30_days|overall
+#
+# Returns one record per attachment with downloadable SAS links for:
+#   original_file_link    — the raw uploaded file
+#   translated_file_link  — the _en translated document
+#   extracted_json_link   — the _en.json extraction output
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route(route="attachment_lineage", methods=["GET"])
+def attachment_lineage(req: func.HttpRequest) -> func.HttpResponse:
+    period = req.params.get("period", "today").lower()
+    logger.info("attachment_lineage | period=%s", period)
+
+    try:
+        result = get_attachment_lineage_response(period=period)
+        return _json_ok(result)
+
+    except ValueError as ve:
+        logger.warning("attachment_lineage bad input: %s", ve)
+        return _err(str(ve), status_code=400)
+    except Exception as exc:
+        logger.error("attachment_lineage error | %s", exc, exc_info=True)
+        return _err(f"Error fetching attachment lineage: {exc}")

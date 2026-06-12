@@ -49,7 +49,7 @@ def main() -> int:
                 settings.source_container, settings.target_container)
 
     if args.dry_run:
-        blob_client = BlobStorageClient()
+        blob_client = AzureBlobStorageClient()
         blobs = list(blob_client.list_blobs(settings.source_container))
         logger.info("Dry run — %d blob(s) in '%s':", len(blobs), settings.source_container)
         for b in blobs:
@@ -57,7 +57,7 @@ def main() -> int:
         return 0
 
     pipeline = PipelineService(
-        blob_client=BlobStorageClient(),
+        blob_client=AzureBlobStorageClient(),
         doc_intel_client=AzureDocumentIntelligenceClient(),
         translator_client=AzureTranslatorClient(),
         extraction_service=ExtractionService(),

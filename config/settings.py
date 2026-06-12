@@ -28,7 +28,11 @@ class _Settings:
 
     @property
     def source_container(self) -> str:
-        return self._get("SOURCE_CONTAINER", "ocr-invoices")
+        return self._get("SOURCE_CONTAINER", "raw-invoices")
+    
+    @property
+    def source_container_translation(self) -> str:
+        return self._get("SOURCE_CONTAINER_TRANSLATION", "ocr-invoices")
 
     @property
     def target_container(self) -> str:

@@ -352,58 +352,106 @@ def process_files(
 
     with _temp_workspace() as (src_dir, ocr_dir):
         for blob_name, _blob_props in files.items():
+
+            log_step(
+                run_id=_run_id,
+                workflow_name=Workflow.OCR_PIPELINE,
+                step_name="ocr_started",
+                status="Started",
+                step_value=blob_name,
+                detail=f"Started processing {blob_name}",
+            )
+
             src_pdf = src_dir / blob_name
+
             try:
                 # Download
                 src_pdf.parent.mkdir(parents=True, exist_ok=True)
                 raw = blob.download_bytes(src_cont, blob_name)
                 src_pdf.write_bytes(raw)
-                logger.info("Downloaded: %s (%d bytes)", blob_name, len(raw))
 
-                # Process
+                logger.info(
+                    "Downloaded: %s (%d bytes)",
+                    blob_name,
+                    len(raw),
+                )
+
+                # OCR Processing
                 if force_img_processing:
                     result_pdf = _process_force_image(src_pdf, ocr_dir)
                 else:
                     result_pdf = _process_with_fallback(src_pdf, ocr_dir)
 
-                # Upload to target
+                # Upload OCR output
                 target_name = _normalize_blob_name(result_pdf.name)
-                blob.upload_file(tgt_cont, target_name, str(result_pdf))
 
+                blob.upload_file(
+                    tgt_cont,
+                    target_name,
+                    str(result_pdf),
+                )
+
+                # Success lineage
                 log_step(
                     run_id=_run_id,
                     workflow_name=Workflow.OCR_PIPELINE,
                     step_name=Step.OCR_COMPLETED,
                     status="Completed",
                     step_value=blob_name,
+                    filename=blob_name,
                     detail=f"Output: {target_name}",
                 )
-                logger.info("✓ %s → %s / %s", blob_name, tgt_cont, target_name)
+
+                logger.info(
+                    "✓ %s → %s/%s",
+                    blob_name,
+                    tgt_cont,
+                    target_name,
+                )
 
             except Exception as exc:
-                logger.error("✗ Fatal error processing %s: %s", blob_name, exc, exc_info=True)
+                logger.error(
+                    "✗ Fatal error processing %s: %s",
+                    blob_name,
+                    exc,
+                    exc_info=True,
+                )
 
-                # Best-effort: stash original in failed container
+                # Best effort upload to failed container
                 try:
                     if src_pdf.exists():
-                        blob.upload_file(fld_cont, _normalize_blob_name(blob_name), str(src_pdf))
+                        blob.upload_file(
+                            fld_cont,
+                            _normalize_blob_name(blob_name),
+                            str(src_pdf),
+                        )
                 except Exception as upload_exc:
-                    logger.error("Failed to upload to failed container: %s", upload_exc)
+                    logger.error(
+                        "Failed to upload to failed container: %s",
+                        upload_exc,
+                    )
 
+                # Failure lineage
                 log_step(
                     run_id=_run_id,
                     workflow_name=Workflow.OCR_PIPELINE,
                     step_name=Step.OCR_FAILED,
                     status="Failed",
                     step_value=blob_name,
+                    filename=blob_name,
                     detail=str(exc),
                 )
 
+    # Workflow-level completion
     log_step(
         run_id=_run_id,
         workflow_name=Workflow.OCR_PIPELINE,
         step_name=Step.WORKFLOW_COMPLETED,
         status="Completed",
-        detail=f"Processed {len(files)} file(s).",
+        detail=f"Processed {len(files)} file(s)",
     )
-    logger.info("OCR pipeline complete. Run ID: %s", _run_id)
+
+    logger.info(
+        "OCR pipeline complete. Run ID: %s",
+        _run_id,
+    )

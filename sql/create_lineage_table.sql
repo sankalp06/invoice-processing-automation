@@ -31,7 +31,14 @@ CREATE TABLE invoice_process_log (
     logged_at        DATETIME2(3)    NOT NULL DEFAULT SYSUTCDATETIME(),
 
     -- ── Optional detail ───────────────────────────────────────────────────
-    detail           NVARCHAR(MAX)   NULL                -- error message, extra JSON, etc.
+    detail           NVARCHAR(MAX)   NULL,               -- error message, extra JSON, etc.
+
+    -- ── Attachment file links ──────────────────────────────────────────────
+    -- Populated for attachment-level steps; NULL for aggregate/workflow steps.
+    filename              NVARCHAR(500)   NULL,          -- original attachment filename
+    original_file_link    NVARCHAR(2000)  NULL,          -- SAS URL to original blob
+    translated_file_link  NVARCHAR(2000)  NULL,          -- SAS URL to _en translated blob
+    extracted_json_link   NVARCHAR(2000)  NULL           -- SAS URL to _en.json extraction
 );
 
 -- ── Indexes for lineage API queries ──────────────────────────────────────────
@@ -68,4 +75,16 @@ CREATE NONCLUSTERED INDEX ix_ipl_run_id
 -- Any workflow
 --   workflow_completed          Entire workflow run finished without critical error
 --   workflow_failed             Entire workflow run aborted with a critical error
+-- =============================================================================
+
+-- =============================================================================
+-- Migration: add attachment file-link columns
+-- Run once on existing databases that were created before this migration.
+-- =============================================================================
+ALTER TABLE invoice_process_log
+ADD
+    filename              NVARCHAR(500)   NULL,
+    original_file_link    NVARCHAR(2000)  NULL,
+    translated_file_link  NVARCHAR(2000)  NULL,
+    extracted_json_link   NVARCHAR(2000)  NULL;
 -- =============================================================================
